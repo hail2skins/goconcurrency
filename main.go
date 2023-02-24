@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"math/rand"
+	"sync"
 	"time"
 )
 
@@ -10,34 +11,43 @@ var cache = map[int]Book{}
 var rnd = rand.New(rand.NewSource(time.Now().UnixNano()))
 
 func main() {
+	wg := &sync.WaitGroup{}
+	m := &sync.RWMutex{}
 	for i := 0; i < 10; i++ {
 		id := rnd.Intn(10) + 1
-
-		go func(id int) {
-			if b, ok := queryCache(id); ok {
+		wg.Add(2)
+		go func(id int, wg *sync.WaitGroup, m *sync.RWMutex) {
+			if b, ok := queryCache(id, m); ok {
 				fmt.Println("from cache")
 				fmt.Println(b)
 			}
-		}(id)
-		go func(id int) {
+			wg.Done()
+		}(id, wg, m)
+		go func(id int, wg *sync.WaitGroup, m *sync.RWMutex) {
 			if b, ok := queryDatabase(id); ok {
 				fmt.Println("from database")
+				m.Lock()
 				cache[id] = b
+				m.Unlock()
 				fmt.Println(b)
 			}
-		}(id)
+			wg.Done()
+		}(id, wg, m)
 		time.Sleep(150 * time.Millisecond)
 	}
-	time.Sleep(2 * time.Second)
+
+	wg.Wait()
 }
 
-func queryCache(id int) (Book, bool) {
+func queryCache(id int, m *sync.RWMutex) (Book, bool) {
+	m.RLock()
 	b, ok := cache[id]
+	m.RUnlock()
 	return b, ok
 }
 
 func queryDatabase(id int) (Book, bool) {
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	for _, b := range books {
 		if b.ID == id {
 			return b, true
